@@ -16,7 +16,7 @@ const nextConfig = {
     unoptimized: true,
   },
   webpack: (config) => {
-    config.externals = [...config.externals, "bcrypt"]
+    config.externals = [...config.externals, "bcryptjs"]
     return config
   },
 }
