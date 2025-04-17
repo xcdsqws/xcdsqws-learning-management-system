@@ -2,137 +2,166 @@
 
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
-import { getUserById } from "./db"
-import type { User } from "./types"
+import { supabaseAdmin } from "./supabase"
+import bcryptjs from "bcryptjs" // bcrypt에서 bcryptjs로 변경
 
-// 로그인 함수
-export async function login(username: string, password: string) {
+// 로그인 처리
+export async function login(formData: FormData) {
+  const id = formData.get("id") as string
+  const password = formData.get("password") as string
+
   try {
-    const { getUser } = await import("./db")
-    const user = await getUser(username, password)
+    // 사용자 정보 조회
+    const { data: user, error } = await supabaseAdmin.from("users").select("*").eq("id", id).single()
 
-    if (user) {
-      // 세션 쿠키 설정 (24시간 유효)
-      cookies().set("userId", user.id, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        maxAge: 60 * 60 * 24,
-        path: "/",
-        sameSite: "lax",
-      })
-
-      return {
-        success: true,
-        isAdmin: user.role === "admin",
-        isParent: user.role === "parent",
-      }
+    if (error || !user) {
+      return { error: "아이디 또는 비밀번호가 일치하지 않습니다." }
     }
 
-    return { success: false }
+    // 비밀번호 검증
+    const passwordMatch = await bcryptjs.compare(password, user.password)
+
+    if (!passwordMatch) {
+      return { error: "아이디 또는 비밀번호가 일치하지 않습니다." }
+    }
+
+    // 세션 쿠키 설정
+    const session = {
+      id: user.id,
+      name: user.name,
+      role: user.role,
+      grade: user.grade,
+      class: user.class,
+      number: user.number,
+      child_id: user.child_id,
+    }
+
+    // 쿠키에 세션 저장 (7일 유효)
+    cookies().set("session", JSON.stringify(session), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 60 * 60 * 24 * 7, // 7일
+      path: "/",
+    })
+
+    // 역할에 따라 리다이렉트
+    if (user.role === "admin") {
+      redirect("/admin")
+    } else if (user.role === "parent") {
+      redirect("/parent")
+    } else {
+      redirect("/dashboard")
+    }
   } catch (error) {
-    console.error("로그인 처리 중 오류 발생:", error)
-    return { success: false, error: "로그인 처리 중 오류가 발생했습니다." }
+    console.error("로그인 오류:", error)
+    return { error: "로그인 처리 중 오류가 발생했습니다." }
   }
 }
 
-// 로그아웃 함수
+// 로그아웃 처리
 export async function logout() {
-  try {
-    cookies().delete("userId")
-    redirect("/")
-  } catch (error) {
-    console.error("로그아웃 처리 중 오류 발생:", error)
-    redirect("/")
-  }
+  // 세션 쿠키 삭제
+  cookies().delete("session")
+  redirect("/")
 }
 
-// 현재 로그인한 사용자 정보 가져오기
-export async function getCurrentUser(): Promise<User | null> {
+// 현재 세션 정보 가져오기
+export async function getSession() {
+  const sessionCookie = cookies().get("session")
+
+  if (!sessionCookie) {
+    return null
+  }
+
   try {
-    const userId = cookies().get("userId")?.value
-
-    if (!userId) {
-      return null
-    }
-
-    return getUserById(userId)
+    return JSON.parse(sessionCookie.value)
   } catch (error) {
-    console.error("현재 사용자 정보 조회 중 오류 발생:", error)
+    console.error("세션 파싱 오류:", error)
     return null
   }
 }
 
-// 인증 확인 함수
-export async function checkAuth() {
-  try {
-    const user = await getCurrentUser()
+// 인증 필요한 페이지에서 세션 확인
+export async function requireAuth() {
+  const session = await getSession()
 
-    if (!user) {
-      redirect("/")
-    }
-
-    return user
-  } catch (error) {
-    console.error("인증 확인 중 오류 발생:", error)
+  if (!session) {
     redirect("/")
   }
+
+  return session
 }
 
-// 관리자 권한 확인 함수
-export async function checkAdmin() {
-  try {
-    const user = await getCurrentUser()
+// 관리자 권한 확인
+export async function requireAdmin() {
+  const session = await getSession()
 
-    if (!user || user.role !== "admin") {
-      redirect("/")
-    }
-
-    return user
-  } catch (error) {
-    console.error("관리자 권한 확인 중 오류 발생:", error)
+  if (!session || session.role !== "admin") {
     redirect("/")
   }
+
+  return session
 }
 
-// 학부모 권한 확인 함수
-export async function checkParent() {
-  try {
-    const user = await getCurrentUser()
+// 학부모 권한 확인
+export async function requireParent() {
+  const session = await getSession()
 
-    if (!user || user.role !== "parent") {
-      redirect("/")
-    }
-
-    return user
-  } catch (error) {
-    console.error("학부모 권한 확인 중 오류 발생:", error)
+  if (!session || session.role !== "parent") {
     redirect("/")
   }
+
+  return session
 }
 
-// 학생 권한 확인 함수
-export async function checkStudent() {
-  try {
-    const user = await getCurrentUser()
+// 학생 권한 확인
+export async function requireStudent() {
+  const session = await getSession()
 
-    if (!user || user.role !== "student") {
-      redirect("/")
-    }
-
-    return user
-  } catch (error) {
-    console.error("학생 권한 확인 중 오류 발생:", error)
+  if (!session || session.role !== "student") {
     redirect("/")
   }
+
+  return session
 }
 
-// 세션 유효성 확인 함수
-export async function isSessionValid(): Promise<boolean> {
+// 비밀번호 변경
+export async function changePassword(userId: string, currentPassword: string, newPassword: string) {
   try {
-    const user = await getCurrentUser()
-    return user !== null
+    // 현재 사용자 정보 조회
+    const { data: user, error: userError } = await supabaseAdmin
+      .from("users")
+      .select("password")
+      .eq("id", userId)
+      .single()
+
+    if (userError || !user) {
+      return { error: "사용자를 찾을 수 없습니다." }
+    }
+
+    // 현재 비밀번호 검증
+    const passwordMatch = await bcryptjs.compare(currentPassword, user.password)
+
+    if (!passwordMatch) {
+      return { error: "현재 비밀번호가 일치하지 않습니다." }
+    }
+
+    // 새 비밀번호 해싱
+    const hashedPassword = await bcryptjs.hash(newPassword, 10)
+
+    // 비밀번호 업데이트
+    const { error: updateError } = await supabaseAdmin
+      .from("users")
+      .update({ password: hashedPassword })
+      .eq("id", userId)
+
+    if (updateError) {
+      return { error: "비밀번호 변경 중 오류가 발생했습니다." }
+    }
+
+    return { success: true }
   } catch (error) {
-    console.error("세션 유효성 확인 중 오류 발생:", error)
-    return false
+    console.error("비밀번호 변경 오류:", error)
+    return { error: "비밀번호 변경 중 오류가 발생했습니다." }
   }
 }

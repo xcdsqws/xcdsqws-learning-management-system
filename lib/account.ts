@@ -1,7 +1,46 @@
 "use server"
 
 import { supabaseAdmin } from "./supabase"
-import bcrypt from "bcryptjs"
+import bcryptjs from "bcryptjs" // bcrypt에서 bcryptjs로 변경
+
+// 관리자 계정 생성
+export async function createAdminAccount(data: {
+  id: string
+  password: string
+  name: string
+}) {
+  try {
+    // 이미 존재하는 계정인지 확인
+    const { data: existingAccount } = await supabaseAdmin.from("users").select("id").eq("id", data.id).single()
+
+    if (existingAccount) {
+      throw new Error("이미 존재하는 아이디입니다.")
+    }
+
+    // 비밀번호 해싱
+    const hashedPassword = await bcryptjs.hash(data.password, 10)
+
+    const newAccount = {
+      id: data.id,
+      password: hashedPassword,
+      name: data.name,
+      role: "admin",
+      created_at: new Date().toISOString(),
+    }
+
+    const { data: result, error } = await supabaseAdmin.from("users").insert([newAccount]).select("id").single()
+
+    if (error) {
+      console.error("관리자 계정 생성 오류:", error)
+      throw new Error(error.message)
+    }
+
+    return { id: result.id }
+  } catch (error: any) {
+    console.error("관리자 계정 생성 중 오류 발생:", error)
+    throw error
+  }
+}
 
 // 학생 계정 생성
 export async function createAccount(data: {
@@ -20,7 +59,7 @@ export async function createAccount(data: {
     const password = data.password || generateRandomPassword()
 
     // 비밀번호 해싱
-    const hashedPassword = await bcrypt.hash(password, 10)
+    const hashedPassword = await bcryptjs.hash(password, 10)
 
     const newAccount = {
       id,
@@ -138,7 +177,7 @@ export async function resetPassword(id: string) {
     const newPassword = generateRandomPassword()
 
     // 비밀번호 해싱
-    const hashedPassword = await bcrypt.hash(newPassword, 10)
+    const hashedPassword = await bcryptjs.hash(newPassword, 10)
 
     // 비밀번호 업데이트
     const { error } = await supabaseAdmin.from("users").update({ password: hashedPassword }).eq("id", id)

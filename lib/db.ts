@@ -1,1002 +1,1137 @@
 "use server"
 
 import { supabaseAdmin } from "./supabase"
+import bcryptjs from "bcryptjs" // bcrypt에서 bcryptjs로 변경
 import type {
   User,
   Subject,
-  Assignment,
   StudyLog,
+  Assignment,
   Grade,
   Report,
-  StudyGoal,
-  StudyStatistics,
   Notification,
+  StudyGoal,
   DailyReflection,
-  Student,
 } from "./types"
-import bcrypt from "bcryptjs"
 
-// 사용자 인증
+// 사용자 인증 및 정보 조회
 export async function getUser(id: string, password: string): Promise<User | null> {
   try {
     const { data: user, error } = await supabaseAdmin.from("users").select("*").eq("id", id).single()
 
     if (error || !user) {
-      console.error("사용자 조회 오류:", error)
       return null
     }
 
-    // 비밀번호 검증 (bcrypt 사용)
-    const passwordMatch = await bcrypt.compare(password, user.password)
+    // 비밀번호 검증
+    const passwordMatch = await bcryptjs.compare(password, user.password)
+
     if (!passwordMatch) {
       return null
     }
 
-    // 비밀번호 필드 제외하고 반환
-    const { password: _, ...userWithoutPassword } = user
-    return userWithoutPassword as User
-  } catch (err) {
-    console.error("사용자 인증 중 오류 발생:", err)
+    return user
+  } catch (error) {
+    console.error("사용자 조회 오류:", error)
     return null
   }
 }
 
-// ID로 사용자 조회
+// 사용자 ID로 정보 조회
 export async function getUserById(id: string): Promise<User | null> {
   try {
-    const { data: user, error } = await supabaseAdmin
-      .from("users")
-      .select("id, name, role, grade, class, number, child_id, created_at")
-      .eq("id", id)
-      .single()
+    const { data: user, error } = await supabaseAdmin.from("users").select("*").eq("id", id).single()
 
     if (error || !user) {
-      console.error("사용자 조회 오류:", error)
       return null
     }
 
-    return user as User
-  } catch (err) {
-    console.error("사용자 조회 중 오류 발생:", err)
+    return user
+  } catch (error) {
+    console.error("사용자 조회 오류:", error)
     return null
   }
 }
 
-// ID로 학생 조회 (타입 명확화)
-export async function getStudentById(id: string): Promise<Student | null> {
+// 과목 목록 조회
+export async function getSubjects(): Promise<Subject[]> {
   try {
-    const { data: student, error } = await supabaseAdmin
-      .from("users")
-      .select("id, name, grade, class, number, created_at")
-      .eq("id", id)
-      .eq("role", "student")
+    const { data, error } = await supabaseAdmin.from("subjects").select("*").order("name")
+
+    if (error) {
+      throw error
+    }
+
+    return data || []
+  } catch (error) {
+    console.error("과목 목록 조회 오류:", error)
+    return []
+  }
+}
+
+// 과목 추가
+export async function addSubject(name: string): Promise<Subject | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("subjects")
+      .insert([{ name, created_at: new Date().toISOString() }])
+      .select()
       .single()
 
-    if (error || !student) {
-      console.error("학생 조회 오류:", error)
-      return null
+    if (error) {
+      throw error
     }
 
-    return student as Student
-  } catch (err) {
-    console.error("학생 조회 중 오류 발생:", err)
+    return data
+  } catch (error) {
+    console.error("과목 추가 오류:", error)
     return null
   }
 }
 
-// 모든 학생 조회 (관리자용)
-export async function getAllStudents(): Promise<User[]> {
+// 과목 삭제
+export async function deleteSubject(id: number): Promise<boolean> {
   try {
-    const { data: students, error } = await supabaseAdmin
+    const { error } = await supabaseAdmin.from("subjects").delete().eq("id", id)
+
+    if (error) {
+      throw error
+    }
+
+    return true
+  } catch (error) {
+    console.error("과목 삭제 오류:", error)
+    return false
+  }
+}
+
+// 학습 로그 목록 조회
+export async function getStudyLogs(studentId: string): Promise<StudyLog[]> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("study_logs")
+      .select("*, subject:subjects(name)")
+      .eq("student_id", studentId)
+      .order("date", { ascending: false })
+
+    if (error) {
+      throw error
+    }
+
+    return data || []
+  } catch (error) {
+    console.error("학습 로그 목록 조회 오류:", error)
+    return []
+  }
+}
+
+// 학습 로그 추가
+export async function addStudyLog(
+  studentId: string,
+  subjectId: number,
+  duration: number,
+  content: string,
+  date: string,
+): Promise<StudyLog | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("study_logs")
+      .insert([
+        {
+          student_id: studentId,
+          subject_id: subjectId,
+          duration,
+          content,
+          date,
+          created_at: new Date().toISOString(),
+        },
+      ])
+      .select()
+      .single()
+
+    if (error) {
+      throw error
+    }
+
+    return data
+  } catch (error) {
+    console.error("학습 로그 추가 오류:", error)
+    return null
+  }
+}
+
+// 학습 로그 삭제
+export async function deleteStudyLog(id: number): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin.from("study_logs").delete().eq("id", id)
+
+    if (error) {
+      throw error
+    }
+
+    return true
+  } catch (error) {
+    console.error("학습 로그 삭제 오류:", error)
+    return false
+  }
+}
+
+// 과제 목록 조회
+export async function getAssignments(studentId: string): Promise<Assignment[]> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("assignments")
+      .select("*, subject:subjects(name)")
+      .eq("student_id", studentId)
+      .order("due_date", { ascending: true })
+
+    if (error) {
+      throw error
+    }
+
+    return data || []
+  } catch (error) {
+    console.error("과제 목록 조회 오류:", error)
+    return []
+  }
+}
+
+// 과제 추가
+export async function addAssignment(
+  studentId: string,
+  subjectId: number,
+  title: string,
+  description: string,
+  dueDate: string,
+): Promise<Assignment | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("assignments")
+      .insert([
+        {
+          student_id: studentId,
+          subject_id: subjectId,
+          title,
+          description,
+          due_date: dueDate,
+          status: "pending",
+          created_at: new Date().toISOString(),
+        },
+      ])
+      .select()
+      .single()
+
+    if (error) {
+      throw error
+    }
+
+    return data
+  } catch (error) {
+    console.error("과제 추가 오류:", error)
+    return null
+  }
+}
+
+// 과제 상태 업데이트
+export async function updateAssignmentStatus(id: number, status: "pending" | "completed"): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin.from("assignments").update({ status }).eq("id", id)
+
+    if (error) {
+      throw error
+    }
+
+    return true
+  } catch (error) {
+    console.error("과제 상태 업데이트 오류:", error)
+    return false
+  }
+}
+
+// 과제 삭제
+export async function deleteAssignment(id: number): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin.from("assignments").delete().eq("id", id)
+
+    if (error) {
+      throw error
+    }
+
+    return true
+  } catch (error) {
+    console.error("과제 삭제 오류:", error)
+    return false
+  }
+}
+
+// 성적 목록 조회
+export async function getGrades(studentId: string): Promise<Grade[]> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("grades")
+      .select("*, subject:subjects(name)")
+      .eq("student_id", studentId)
+      .order("date", { ascending: false })
+
+    if (error) {
+      throw error
+    }
+
+    return data || []
+  } catch (error) {
+    console.error("성적 목록 조회 오류:", error)
+    return []
+  }
+}
+
+// 성적 추가
+export async function addGrade(
+  studentId: string,
+  subjectId: number,
+  testName: string,
+  score: number,
+  maxScore: number,
+  date: string,
+): Promise<Grade | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("grades")
+      .insert([
+        {
+          student_id: studentId,
+          subject_id: subjectId,
+          test_name: testName,
+          score,
+          max_score: maxScore,
+          date,
+          created_at: new Date().toISOString(),
+        },
+      ])
+      .select()
+      .single()
+
+    if (error) {
+      throw error
+    }
+
+    return data
+  } catch (error) {
+    console.error("성적 추가 오류:", error)
+    return null
+  }
+}
+
+// 성적 삭제
+export async function deleteGrade(id: number): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin.from("grades").delete().eq("id", id)
+
+    if (error) {
+      throw error
+    }
+
+    return true
+  } catch (error) {
+    console.error("성적 삭제 오류:", error)
+    return false
+  }
+}
+
+// 보고서 생성
+export async function generateReport(studentId: string, period: "weekly" | "monthly"): Promise<Report | null> {
+  try {
+    // 기간 설정
+    const now = new Date()
+    let startDate: Date
+    const endDate = now
+
+    if (period === "weekly") {
+      // 일주일 전
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    } else {
+      // 한 달 전
+      startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
+    }
+
+    // 학습 로그 조회
+    const { data: studyLogs, error: studyLogsError } = await supabaseAdmin
+      .from("study_logs")
+      .select("*")
+      .eq("student_id", studentId)
+      .gte("date", startDate.toISOString().split("T")[0])
+      .lte("date", endDate.toISOString().split("T")[0])
+
+    if (studyLogsError) {
+      throw studyLogsError
+    }
+
+    // 과제 조회
+    const { data: assignments, error: assignmentsError } = await supabaseAdmin
+      .from("assignments")
+      .select("*")
+      .eq("student_id", studentId)
+      .gte("due_date", startDate.toISOString().split("T")[0])
+      .lte("due_date", endDate.toISOString().split("T")[0])
+
+    if (assignmentsError) {
+      throw assignmentsError
+    }
+
+    // 성적 조회
+    const { data: grades, error: gradesError } = await supabaseAdmin
+      .from("grades")
+      .select("*")
+      .eq("student_id", studentId)
+      .gte("date", startDate.toISOString().split("T")[0])
+      .lte("date", endDate.toISOString().split("T")[0])
+
+    if (gradesError) {
+      throw gradesError
+    }
+
+    // 일일 성찰 조회
+    const { data: reflections, error: reflectionsError } = await supabaseAdmin
+      .from("daily_reflections")
+      .select("*")
+      .eq("student_id", studentId)
+      .gte("date", startDate.toISOString().split("T")[0])
+      .lte("date", endDate.toISOString().split("T")[0])
+
+    if (reflectionsError) {
+      throw reflectionsError
+    }
+
+    // 총 학습 시간 계산
+    const totalStudyTime = studyLogs ? studyLogs.reduce((sum, log) => sum + log.duration, 0) : 0
+
+    // 과목별 학습 시간 계산
+    const subjectStudyTime: Record<number, number> = {}
+    if (studyLogs) {
+      studyLogs.forEach((log) => {
+        if (!subjectStudyTime[log.subject_id]) {
+          subjectStudyTime[log.subject_id] = 0
+        }
+        subjectStudyTime[log.subject_id] += log.duration
+      })
+    }
+
+    // 완료된 과제 수 계산
+    const completedAssignments = assignments
+      ? assignments.filter((assignment) => assignment.status === "completed").length
+      : 0
+
+    // 평균 성적 계산
+    let averageScore = 0
+    if (grades && grades.length > 0) {
+      const totalPercentage = grades.reduce((sum, grade) => sum + (grade.score / grade.max_score) * 100, 0)
+      averageScore = totalPercentage / grades.length
+    }
+
+    // 평균 자기 평가 점수 계산
+    let averageSelfRating = 0
+    if (reflections && reflections.length > 0) {
+      const totalRating = reflections.reduce((sum, reflection) => sum + reflection.self_rating, 0)
+      averageSelfRating = totalRating / reflections.length
+    }
+
+    // 성찰 요약 생성
+    let reflectionSummary = ""
+    if (reflections && reflections.length > 0) {
+      // 최근 5개 성찰 내용 요약
+      const recentReflections = reflections
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 5)
+      reflectionSummary = recentReflections.map((r) => r.content).join(" / ")
+    }
+
+    // 보고서 생성
+    const report: Report = {
+      id: 0, // 데이터베이스에서 자동 생성
+      student_id: studentId,
+      period,
+      start_date: startDate.toISOString().split("T")[0],
+      end_date: endDate.toISOString().split("T")[0],
+      total_study_time: totalStudyTime,
+      subject_study_time: subjectStudyTime,
+      completed_assignments: completedAssignments,
+      total_assignments: assignments ? assignments.length : 0,
+      average_score: averageScore,
+      average_self_rating: averageSelfRating,
+      reflection_summary: reflectionSummary,
+      reflection_count: reflections ? reflections.length : 0,
+      created_at: new Date().toISOString(),
+    }
+
+    // 보고서 저장
+    const { data: savedReport, error: saveError } = await supabaseAdmin
+      .from("reports")
+      .insert([report])
+      .select()
+      .single()
+
+    if (saveError) {
+      throw saveError
+    }
+
+    return savedReport
+  } catch (error) {
+    console.error("보고서 생성 오류:", error)
+    return null
+  }
+}
+
+// 보고서 조회
+export async function getReports(studentId: string): Promise<Report[]> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("reports")
+      .select("*")
+      .eq("student_id", studentId)
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      throw error
+    }
+
+    return data || []
+  } catch (error) {
+    console.error("보고서 조회 오류:", error)
+    return []
+  }
+}
+
+// 보고서 상세 조회
+export async function getReportById(id: number): Promise<Report | null> {
+  try {
+    const { data, error } = await supabaseAdmin.from("reports").select("*").eq("id", id).single()
+
+    if (error) {
+      throw error
+    }
+
+    return data
+  } catch (error) {
+    console.error("보고서 상세 조회 오류:", error)
+    return null
+  }
+}
+
+// 알림 목록 조회
+export async function getNotifications(userId: string): Promise<Notification[]> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("notifications")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(20)
+
+    if (error) {
+      throw error
+    }
+
+    return data || []
+  } catch (error) {
+    console.error("알림 목록 조회 오류:", error)
+    return []
+  }
+}
+
+// 알림 추가
+export async function addNotification(
+  userId: string,
+  title: string,
+  message: string,
+  type: "info" | "warning" | "success" | "error",
+): Promise<Notification | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("notifications")
+      .insert([
+        {
+          user_id: userId,
+          title,
+          message,
+          type,
+          read: false,
+          created_at: new Date().toISOString(),
+        },
+      ])
+      .select()
+      .single()
+
+    if (error) {
+      throw error
+    }
+
+    return data
+  } catch (error) {
+    console.error("알림 추가 오류:", error)
+    return null
+  }
+}
+
+// 알림 읽음 처리
+export async function markNotificationAsRead(id: number): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin.from("notifications").update({ read: true }).eq("id", id)
+
+    if (error) {
+      throw error
+    }
+
+    return true
+  } catch (error) {
+    console.error("알림 읽음 처리 오류:", error)
+    return false
+  }
+}
+
+// 모든 알림 읽음 처리
+export async function markAllNotificationsAsRead(userId: string): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin
+      .from("notifications")
+      .update({ read: true })
+      .eq("user_id", userId)
+      .eq("read", false)
+
+    if (error) {
+      throw error
+    }
+
+    return true
+  } catch (error) {
+    console.error("모든 알림 읽음 처리 오류:", error)
+    return false
+  }
+}
+
+// 학습 목표 조회
+export async function getStudyGoals(studentId: string): Promise<StudyGoal[]> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("study_goals")
+      .select("*, subject:subjects(name)")
+      .eq("student_id", studentId)
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      throw error
+    }
+
+    return data || []
+  } catch (error) {
+    console.error("학습 목표 조회 오류:", error)
+    return []
+  }
+}
+
+// 학습 목표 추가
+export async function addStudyGoal(
+  studentId: string,
+  subjectId: number,
+  description: string,
+  targetHours: number,
+  deadline: string,
+): Promise<StudyGoal | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("study_goals")
+      .insert([
+        {
+          student_id: studentId,
+          subject_id: subjectId,
+          description,
+          target_hours: targetHours,
+          current_hours: 0,
+          deadline,
+          completed: false,
+          created_at: new Date().toISOString(),
+        },
+      ])
+      .select()
+      .single()
+
+    if (error) {
+      throw error
+    }
+
+    return data
+  } catch (error) {
+    console.error("학습 목표 추가 오류:", error)
+    return null
+  }
+}
+
+// 학습 목표 업데이트
+export async function updateStudyGoal(id: number, currentHours: number, completed: boolean): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin
+      .from("study_goals")
+      .update({ current_hours: currentHours, completed })
+      .eq("id", id)
+
+    if (error) {
+      throw error
+    }
+
+    return true
+  } catch (error) {
+    console.error("학습 목표 업데이트 오류:", error)
+    return false
+  }
+}
+
+// 학습 목표 삭제
+export async function deleteStudyGoal(id: number): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin.from("study_goals").delete().eq("id", id)
+
+    if (error) {
+      throw error
+    }
+
+    return true
+  } catch (error) {
+    console.error("학습 목표 삭제 오류:", error)
+    return false
+  }
+}
+
+// 일일 성찰 추가
+export async function addDailyReflection(
+  studentId: string,
+  content: string,
+  selfRating: number,
+  date: string,
+): Promise<DailyReflection | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("daily_reflections")
+      .insert([
+        {
+          student_id: studentId,
+          content,
+          self_rating: selfRating,
+          date,
+          created_at: new Date().toISOString(),
+        },
+      ])
+      .select()
+      .single()
+
+    if (error) {
+      throw error
+    }
+
+    return data
+  } catch (error) {
+    console.error("일일 성찰 추가 오류:", error)
+    return null
+  }
+}
+
+// 일일 성찰 목록 조회
+export async function getDailyReflections(studentId: string): Promise<DailyReflection[]> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("daily_reflections")
+      .select("*")
+      .eq("student_id", studentId)
+      .order("date", { ascending: false })
+
+    if (error) {
+      throw error
+    }
+
+    return data || []
+  } catch (error) {
+    console.error("일일 성찰 목록 조회 오류:", error)
+    return []
+  }
+}
+
+// 일일 성찰 삭제
+export async function deleteDailyReflection(id: number): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin.from("daily_reflections").delete().eq("id", id)
+
+    if (error) {
+      throw error
+    }
+
+    return true
+  } catch (error) {
+    console.error("일일 성찰 삭제 오류:", error)
+    return false
+  }
+}
+
+// 학생 목록 조회
+export async function getStudents(): Promise<User[]> {
+  try {
+    const { data, error } = await supabaseAdmin
       .from("users")
-      .select("id, name, role, grade, class, number, created_at")
+      .select("*")
       .eq("role", "student")
       .order("grade")
       .order("class")
       .order("number")
 
     if (error) {
-      console.error("학생 조회 오류:", error)
-      return []
+      throw error
     }
 
-    return students as User[]
-  } catch (err) {
-    console.error("학생 목록 조회 중 오류 발생:", err)
+    return data || []
+  } catch (error) {
+    console.error("학생 목록 조회 오류:", error)
     return []
   }
 }
 
-// 과목 조회
-export async function getSubjects(): Promise<Subject[]> {
+// 학생 상세 정보 조회
+export async function getStudentDetail(id: string): Promise<{
+  user: User | null
+  studyLogs: StudyLog[]
+  assignments: Assignment[]
+  grades: Grade[]
+  reflections: DailyReflection[]
+}> {
   try {
-    const { data: subjects, error } = await supabaseAdmin.from("subjects").select("*").order("id")
+    // 학생 정보 조회
+    const { data: user, error: userError } = await supabaseAdmin.from("users").select("*").eq("id", id).single()
 
-    if (error) {
-      console.error("과목 조회 오류:", error)
-      return []
+    if (userError) {
+      throw userError
     }
 
-    return subjects as Subject[]
-  } catch (err) {
-    console.error("과목 조회 중 오류 발생:", err)
-    return []
-  }
-}
+    // 학습 로그 조회
+    const { data: studyLogs, error: studyLogsError } = await supabaseAdmin
+      .from("study_logs")
+      .select("*, subject:subjects(name)")
+      .eq("student_id", id)
+      .order("date", { ascending: false })
+      .limit(10)
 
-// 과목 추가
-export async function addSubject(subject: Subject): Promise<Subject> {
-  try {
-    // 이미 존재하는 과목인지 확인
-    const { data: existingSubject } = await supabaseAdmin.from("subjects").select("*").eq("id", subject.id).single()
-
-    if (existingSubject) {
-      throw new Error("이미 존재하는 과목 ID입니다.")
+    if (studyLogsError) {
+      throw studyLogsError
     }
 
-    const { data, error } = await supabaseAdmin.from("subjects").insert([subject]).select().single()
-
-    if (error) {
-      console.error("과목 추가 오류:", error)
-      throw new Error("과목을 추가하는 중 오류가 발생했습니다.")
-    }
-
-    return data as Subject
-  } catch (err) {
-    console.error("과목 추가 중 오류 발생:", err)
-    throw err
-  }
-}
-
-// 학생별 과제 조회
-export async function getAssignmentsByStudent(studentId: string): Promise<Assignment[]> {
-  try {
-    const { data: assignments, error } = await supabaseAdmin
+    // 과제 조회
+    const { data: assignments, error: assignmentsError } = await supabaseAdmin
       .from("assignments")
+      .select("*, subject:subjects(name)")
+      .eq("student_id", id)
+      .order("due_date", { ascending: true })
+      .limit(10)
+
+    if (assignmentsError) {
+      throw assignmentsError
+    }
+
+    // 성적 조회
+    const { data: grades, error: gradesError } = await supabaseAdmin
+      .from("grades")
+      .select("*, subject:subjects(name)")
+      .eq("student_id", id)
+      .order("date", { ascending: false })
+      .limit(10)
+
+    if (gradesError) {
+      throw gradesError
+    }
+
+    // 일일 성찰 조회
+    const { data: reflections, error: reflectionsError } = await supabaseAdmin
+      .from("daily_reflections")
       .select("*")
-      .eq("student_id", studentId)
-      .order("created_at", { ascending: false })
+      .eq("student_id", id)
+      .order("date", { ascending: false })
+      .limit(10)
 
-    if (error) {
-      console.error("과제 조회 오류:", error)
-      return []
+    if (reflectionsError) {
+      throw reflectionsError
     }
 
-    return assignments as Assignment[]
-  } catch (err) {
-    console.error("학생별 과제 조회 중 오류 발생:", err)
+    return {
+      user,
+      studyLogs: studyLogs || [],
+      assignments: assignments || [],
+      grades: grades || [],
+      reflections: reflections || [],
+    }
+  } catch (error) {
+    console.error("학생 상세 정보 조회 오류:", error)
+    return {
+      user: null,
+      studyLogs: [],
+      assignments: [],
+      grades: [],
+      reflections: [],
+    }
+  }
+}
+
+// 학부모 목록 조회
+export async function getParents(): Promise<User[]> {
+  try {
+    const { data, error } = await supabaseAdmin.from("users").select("*").eq("role", "parent").order("name")
+
+    if (error) {
+      throw error
+    }
+
+    return data || []
+  } catch (error) {
+    console.error("학부모 목록 조회 오류:", error)
     return []
   }
 }
 
-// 모든 과제 조회 (관리자용)
-export async function getAllAssignments(): Promise<Assignment[]> {
+// 학부모 계정 생성
+export async function createParentAccount(name: string, childId: string): Promise<User | null> {
   try {
-    const { data: assignments, error } = await supabaseAdmin
-      .from("assignments")
-      .select("*")
-      .order("created_at", { ascending: false })
+    // 자녀 정보 조회
+    const { data: child, error: childError } = await supabaseAdmin.from("users").select("*").eq("id", childId).single()
 
-    if (error) {
-      console.error("과제 조회 오류:", error)
-      return []
+    if (childError || !child) {
+      throw new Error("자녀 정보를 찾을 수 없습니다.")
     }
 
-    return assignments as Assignment[]
-  } catch (err) {
-    console.error("전체 과제 조회 중 오류 발생:", err)
-    return []
-  }
-}
+    // ID 생성 (p_ + 자녀 ID)
+    const id = `p_${childId}`
 
-// 과제 추가
-export async function addAssignment(assignment: Omit<Assignment, "id" | "created_at">): Promise<Assignment> {
-  try {
-    const id = `assignment_${Date.now()}`
-    const newAssignment = {
-      id,
-      ...assignment,
-      created_at: new Date().toISOString(),
-    }
+    // 비밀번호 생성 (초기 비밀번호는 ID와 동일)
+    const password = id
+    const hashedPassword = await bcryptjs.hash(password, 10)
 
-    const { data, error } = await supabaseAdmin.from("assignments").insert([newAssignment]).select().single()
-
-    if (error) {
-      console.error("과제 추가 오류:", error)
-      throw new Error("과제를 추가하는 중 오류가 발생했습니다.")
-    }
-
-    return data as Assignment
-  } catch (err) {
-    console.error("과제 추가 중 오류 발생:", err)
-    throw err
-  }
-}
-
-// 과제 업데이트
-export async function updateAssignment(id: string, data: Partial<Assignment>): Promise<Assignment | null> {
-  try {
-    const { data: updatedAssignment, error } = await supabaseAdmin
-      .from("assignments")
-      .update(data)
-      .eq("id", id)
+    // 계정 생성
+    const { data, error } = await supabaseAdmin
+      .from("users")
+      .insert([
+        {
+          id,
+          password: hashedPassword,
+          name,
+          role: "parent",
+          child_id: childId,
+          created_at: new Date().toISOString(),
+        },
+      ])
       .select()
       .single()
 
     if (error) {
-      console.error("과제 업데이트 오류:", error)
-      return null
+      throw error
     }
 
-    return updatedAssignment as Assignment
-  } catch (err) {
-    console.error("과제 업데이트 중 오류 발생:", err)
+    return { ...data, password }
+  } catch (error) {
+    console.error("학부모 계정 생성 오류:", error)
     return null
   }
 }
 
-// 학습 로그 조회
-export async function getStudyLogsByStudent(studentId: string): Promise<StudyLog[]> {
+// 학부모 계정 삭제
+export async function deleteParentAccount(id: string): Promise<boolean> {
   try {
-    const { data: studyLogs, error } = await supabaseAdmin
+    const { error } = await supabaseAdmin.from("users").delete().eq("id", id).eq("role", "parent")
+
+    if (error) {
+      throw error
+    }
+
+    return true
+  } catch (error) {
+    console.error("학부모 계정 삭제 오류:", error)
+    return false
+  }
+}
+
+// 자녀 정보 조회 (학부모용)
+export async function getChildInfo(childId: string): Promise<{
+  user: User | null
+  studyLogs: StudyLog[]
+  assignments: Assignment[]
+  grades: Grade[]
+  reports: Report[]
+  reflections: DailyReflection[]
+}> {
+  try {
+    // 자녀 정보 조회
+    const { data: user, error: userError } = await supabaseAdmin.from("users").select("*").eq("id", childId).single()
+
+    if (userError || !user) {
+      throw new Error("자녀 정보를 찾을 수 없습니다.")
+    }
+
+    // 학습 로그 조회
+    const { data: studyLogs, error: studyLogsError } = await supabaseAdmin
       .from("study_logs")
-      .select("*")
-      .eq("student_id", studentId)
-      .order("timestamp", { ascending: false })
+      .select("*, subject:subjects(name)")
+      .eq("student_id", childId)
+      .order("date", { ascending: false })
+      .limit(10)
 
-    if (error) {
-      console.error("학습 로그 조회 오류:", error)
-      return []
+    if (studyLogsError) {
+      throw studyLogsError
     }
 
-    return studyLogs as StudyLog[]
-  } catch (err) {
-    console.error("학습 로그 조회 중 오류 발생:", err)
-    return []
-  }
-}
+    // 과제 조회
+    const { data: assignments, error: assignmentsError } = await supabaseAdmin
+      .from("assignments")
+      .select("*, subject:subjects(name)")
+      .eq("student_id", childId)
+      .order("due_date", { ascending: true })
 
-// 학습 로그 추가
-export async function addStudyLog(log: Omit<StudyLog, "id" | "timestamp">): Promise<StudyLog> {
-  try {
-    const id = `log_${Date.now()}`
-    const newLog = {
-      id,
-      ...log,
-      timestamp: new Date().toISOString(),
+    if (assignmentsError) {
+      throw assignmentsError
     }
 
-    const { data, error } = await supabaseAdmin.from("study_logs").insert([newLog]).select().single()
-
-    if (error) {
-      console.error("학습 로그 추가 오류:", error)
-      throw new Error("학습 로그를 추가하는 중 오류가 발생했습니다.")
-    }
-
-    return data as StudyLog
-  } catch (err) {
-    console.error("학습 로그 추가 중 오류 발생:", err)
-    throw err
-  }
-}
-
-// 성적 조회
-export async function getGradesByStudent(studentId: string): Promise<Grade[]> {
-  try {
-    const { data: grades, error } = await supabaseAdmin
+    // 성적 조회
+    const { data: grades, error: gradesError } = await supabaseAdmin
       .from("grades")
+      .select("*, subject:subjects(name)")
+      .eq("student_id", childId)
+      .order("date", { ascending: false })
+
+    if (gradesError) {
+      throw gradesError
+    }
+
+    // 보고서 조회
+    const { data: reports, error: reportsError } = await supabaseAdmin
+      .from("reports")
       .select("*")
+      .eq("student_id", childId)
+      .order("created_at", { ascending: false })
+
+    if (reportsError) {
+      throw reportsError
+    }
+
+    // 일일 성찰 조회
+    const { data: reflections, error: reflectionsError } = await supabaseAdmin
+      .from("daily_reflections")
+      .select("*")
+      .eq("student_id", childId)
+      .order("date", { ascending: false })
+
+    if (reflectionsError) {
+      throw reflectionsError
+    }
+
+    return {
+      user,
+      studyLogs: studyLogs || [],
+      assignments: assignments || [],
+      grades: grades || [],
+      reports: reports || [],
+      reflections: reflections || [],
+    }
+  } catch (error) {
+    console.error("자녀 정보 조회 오류:", error)
+    return {
+      user: null,
+      studyLogs: [],
+      assignments: [],
+      grades: [],
+      reports: [],
+      reflections: [],
+    }
+  }
+}
+
+// 데이터 내보내기
+export async function exportData(studentId: string): Promise<{
+  user: User | null
+  studyLogs: StudyLog[]
+  assignments: Assignment[]
+  grades: Grade[]
+  reports: Report[]
+  reflections: DailyReflection[]
+}> {
+  try {
+    // 학생 정보 조회
+    const { data: user, error: userError } = await supabaseAdmin.from("users").select("*").eq("id", studentId).single()
+
+    if (userError) {
+      throw userError
+    }
+
+    // 학습 로그 조회
+    const { data: studyLogs, error: studyLogsError } = await supabaseAdmin
+      .from("study_logs")
+      .select("*, subject:subjects(name)")
       .eq("student_id", studentId)
-      .order("timestamp", { ascending: false })
+      .order("date", { ascending: false })
 
-    if (error) {
-      console.error("성적 조회 오류:", error)
-      return []
+    if (studyLogsError) {
+      throw studyLogsError
     }
 
-    return grades as Grade[]
-  } catch (err) {
-    console.error("성적 조회 중 오류 발생:", err)
-    return []
-  }
-}
+    // 과제 조회
+    const { data: assignments, error: assignmentsError } = await supabaseAdmin
+      .from("assignments")
+      .select("*, subject:subjects(name)")
+      .eq("student_id", studentId)
+      .order("due_date", { ascending: true })
 
-// 모든 성적 조회 (관리자용)
-export async function getAllGrades(): Promise<Grade[]> {
-  try {
-    const { data: grades, error } = await supabaseAdmin
+    if (assignmentsError) {
+      throw assignmentsError
+    }
+
+    // 성적 조회
+    const { data: grades, error: gradesError } = await supabaseAdmin
       .from("grades")
-      .select("*")
-      .order("timestamp", { ascending: false })
+      .select("*, subject:subjects(name)")
+      .eq("student_id", studentId)
+      .order("date", { ascending: false })
 
-    if (error) {
-      console.error("성적 조회 오류:", error)
-      return []
+    if (gradesError) {
+      throw gradesError
     }
 
-    return grades as Grade[]
-  } catch (err) {
-    console.error("전체 성적 조회 중 오류 발생:", err)
-    return []
-  }
-}
-
-// 성적 추가
-export async function addGrade(grade: Omit<Grade, "id" | "timestamp">): Promise<Grade> {
-  try {
-    const id = `grade_${Date.now()}`
-    const newGrade = {
-      id,
-      ...grade,
-      timestamp: new Date().toISOString(),
-    }
-
-    const { data, error } = await supabaseAdmin.from("grades").insert([newGrade]).select().single()
-
-    if (error) {
-      console.error("성적 추가 오류:", error)
-      throw new Error("성적을 추가하는 중 오류가 발생했습니다.")
-    }
-
-    return data as Grade
-  } catch (err) {
-    console.error("성적 추가 중 오류 발생:", err)
-    throw err
-  }
-}
-
-// 리포트 생성
-export async function generateReport(studentId: string): Promise<Report> {
-  try {
-    // 학생의 학습 로그 조회
-    const studentLogs = await getStudyLogsByStudent(studentId)
-
-    // 학생의 성적 조회
-    const studentGrades = await getGradesByStudent(studentId)
-
-    // 학생의 일일 성찰 조회 (최근 30일)
-    const thirtyDaysAgo = new Date()
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-    const startDate = thirtyDaysAgo.toISOString().split("T")[0]
-    const studentReflections = await getReflectionsByStudent(studentId, startDate)
-
-    // 총 공부 시간 계산
-    const totalStudyTime = studentLogs.reduce((total, log) => total + log.duration, 0)
-
-    // 과목별 공부 시간 계산
-    const subjectStudyTime: Record<string, number> = {}
-    studentLogs.forEach((log) => {
-      subjectStudyTime[log.subject_id] = (subjectStudyTime[log.subject_id] || 0) + log.duration
-    })
-
-    // 평균 성적 계산
-    const averageGrade =
-      studentGrades.length > 0
-        ? studentGrades.reduce((total, grade) => total + (grade.score / grade.max_score) * 100, 0) /
-          studentGrades.length
-        : 0
-
-    // 평균 자기평가 점수 계산
-    const averageSelfRating =
-      studentReflections.length > 0
-        ? studentReflections.reduce((total, reflection) => total + reflection.self_rating, 0) /
-          studentReflections.length
-        : 0
-
-    // 성찰 내용 요약 (최근 5개)
-    const recentReflections = studentReflections.slice(0, 5)
-    const reflectionSummary =
-      recentReflections.length > 0
-        ? recentReflections
-            .map((r) => `${r.reflection_date}: ${r.content.substring(0, 50)}${r.content.length > 50 ? "..." : ""}`)
-            .join("\n\n")
-        : ""
-
-    const id = `report_${Date.now()}`
-    const newReport = {
-      id,
-      student_id: studentId,
-      total_study_time: totalStudyTime,
-      subject_study_time: subjectStudyTime,
-      average_grade: averageGrade,
-      timestamp: new Date().toISOString(),
-      // 추가된 필드
-      average_self_rating: averageSelfRating,
-      reflection_summary: reflectionSummary,
-      reflection_count: studentReflections.length,
-    }
-
-    const { data, error } = await supabaseAdmin.from("reports").insert([newReport]).select().single()
-
-    if (error) {
-      console.error("리포트 생성 오류:", error)
-      throw new Error("리포트를 생성하는 중 오류가 발생했습니다.")
-    }
-
-    return data as Report
-  } catch (err) {
-    console.error("리포트 생성 중 오류 발생:", err)
-    throw err
-  }
-}
-
-// 리포트 조회
-export async function getReportByStudent(studentId: string): Promise<Report | null> {
-  try {
-    const { data: reports, error } = await supabaseAdmin
+    // 보고서 조회
+    const { data: reports, error: reportsError } = await supabaseAdmin
       .from("reports")
       .select("*")
       .eq("student_id", studentId)
-      .order("timestamp", { ascending: false })
-      .limit(1)
-
-    if (error || !reports || reports.length === 0) {
-      return null
-    }
-
-    return reports[0] as Report
-  } catch (err) {
-    console.error("리포트 조회 중 오류 발생:", err)
-    return null
-  }
-}
-
-// 학습 목표 조회
-export async function getStudyGoalsByStudent(studentId: string): Promise<StudyGoal[]> {
-  try {
-    const { data: goals, error } = await supabaseAdmin
-      .from("study_goals")
-      .select("*")
-      .eq("student_id", studentId)
       .order("created_at", { ascending: false })
 
-    if (error) {
-      console.error("학습 목표 조회 오류:", error)
-      return []
+    if (reportsError) {
+      throw reportsError
     }
 
-    return goals as StudyGoal[]
-  } catch (err) {
-    console.error("학습 목표 조회 중 오류 발생:", err)
-    return []
-  }
-}
-
-// 학습 목표 추가/수정
-export async function upsertStudyGoal(goal: Omit<StudyGoal, "id" | "created_at" | "updated_at">): Promise<StudyGoal> {
-  try {
-    // 기존 목표가 있는지 확인
-    const { data: existingGoal } = await supabaseAdmin
-      .from("study_goals")
-      .select("id")
-      .eq("student_id", goal.student_id)
-      .eq("subject_id", goal.subject_id)
-      .eq("period", goal.period)
-      .single()
-
-    const now = new Date().toISOString()
-
-    if (existingGoal) {
-      // 기존 목표 업데이트
-      const { data, error } = await supabaseAdmin
-        .from("study_goals")
-        .update({
-          target_minutes: goal.target_minutes,
-          updated_at: now,
-        })
-        .eq("id", existingGoal.id)
-        .select()
-        .single()
-
-      if (error) {
-        console.error("학습 목표 업데이트 오류:", error)
-        throw new Error("학습 목표를 업데이트하는 중 오류가 발생했습니다.")
-      }
-
-      return data as StudyGoal
-    } else {
-      // 새 목표 추가
-      const id = `goal_${Date.now()}`
-      const newGoal = {
-        id,
-        ...goal,
-        created_at: now,
-        updated_at: now,
-      }
-
-      const { data, error } = await supabaseAdmin.from("study_goals").insert([newGoal]).select().single()
-
-      if (error) {
-        console.error("학습 목표 추가 오류:", error)
-        throw new Error("학습 목표를 추가하는 중 오류가 발생했습니다.")
-      }
-
-      return data as StudyGoal
-    }
-  } catch (err) {
-    console.error("학습 목표 추가/수정 중 오류 발생:", err)
-    throw err
-  }
-}
-
-// 학습 목표 삭제
-export async function deleteStudyGoal(id: string): Promise<void> {
-  try {
-    const { error } = await supabaseAdmin.from("study_goals").delete().eq("id", id)
-
-    if (error) {
-      console.error("학습 목표 삭제 오류:", error)
-      throw new Error("학습 목표를 삭제하는 중 오류가 발생했습니다.")
-    }
-  } catch (err) {
-    console.error("학습 목표 삭제 중 오류 발생:", err)
-    throw err
-  }
-}
-
-// 학습 통계 조회
-export async function getStudyStatistics(studentId: string, days = 30): Promise<StudyStatistics> {
-  try {
-    // 기준 날짜 설정 (days일 전부터 현재까지)
-    const endDate = new Date()
-    const startDate = new Date()
-    startDate.setDate(startDate.getDate() - days)
-
-    const startDateStr = startDate.toISOString()
-
-    // 학습 로그 조회
-    const { data: logs, error } = await supabaseAdmin
-      .from("study_logs")
+    // 일일 성찰 조회
+    const { data: reflections, error: reflectionsError } = await supabaseAdmin
+      .from("daily_reflections")
       .select("*")
       .eq("student_id", studentId)
-      .gte("timestamp", startDateStr)
-      .order("timestamp", { ascending: true })
+      .order("date", { ascending: false })
 
-    if (error) {
-      console.error("학습 통계 조회 오류:", error)
-      return {
-        totalTime: 0,
-        subjectTime: {},
-        dailyTime: {},
-        weeklyTime: {},
-        monthlyTime: {},
-        hourlyDistribution: {},
-        dayOfWeekDistribution: {},
-      }
+    if (reflectionsError) {
+      throw reflectionsError
     }
-
-    const studyLogs = logs as StudyLog[]
-
-    // 총 학습 시간
-    const totalTime = studyLogs.reduce((total, log) => total + log.duration, 0)
-
-    // 과목별 학습 시간
-    const subjectTime: Record<string, number> = {}
-    // 일별 학습 시간
-    const dailyTime: Record<string, number> = {}
-    // 주별 학습 시간
-    const weeklyTime: Record<string, number> = {}
-    // 월별 학습 시간
-    const monthlyTime: Record<string, number> = {}
-    // 시간대별 분포
-    const hourlyDistribution: Record<string, number> = {}
-    // 요일별 분포
-    const dayOfWeekDistribution: Record<string, number> = {
-      "0": 0, // 일요일
-      "1": 0, // 월요일
-      "2": 0, // 화요일
-      "3": 0, // 수요일
-      "4": 0, // 목요일
-      "5": 0, // 금요일
-      "6": 0, // 토요일
-    }
-
-    studyLogs.forEach((log) => {
-      // 과목별 학습 시간
-      subjectTime[log.subject_id] = (subjectTime[log.subject_id] || 0) + log.duration
-
-      const date = new Date(log.timestamp)
-
-      // 일별 (YYYY-MM-DD 형식)
-      const dailyKey = date.toISOString().split("T")[0]
-      dailyTime[dailyKey] = (dailyTime[dailyKey] || 0) + log.duration
-
-      // 주별 (YYYY-WW 형식, WW는 해당 연도의 주차)
-      const weekNumber = getWeekNumber(date)
-      const weeklyKey = `${date.getFullYear()}-${weekNumber.toString().padStart(2, "0")}`
-      weeklyTime[weeklyKey] = (weeklyTime[weeklyKey] || 0) + log.duration
-
-      // 월별 (YYYY-MM 형식)
-      const monthlyKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, "0")}`
-      monthlyTime[monthlyKey] = (monthlyTime[monthlyKey] || 0) + log.duration
-
-      // 시간대별
-      const hour = date.getHours()
-      hourlyDistribution[hour.toString()] = (hourlyDistribution[hour.toString()] || 0) + log.duration
-
-      // 요일별
-      const dayOfWeek = date.getDay().toString()
-      dayOfWeekDistribution[dayOfWeek] = (dayOfWeekDistribution[dayOfWeek] || 0) + log.duration
-    })
 
     return {
-      totalTime,
-      subjectTime,
-      dailyTime,
-      weeklyTime,
-      monthlyTime,
-      hourlyDistribution,
-      dayOfWeekDistribution,
+      user,
+      studyLogs: studyLogs || [],
+      assignments: assignments || [],
+      grades: grades || [],
+      reports: reports || [],
+      reflections: reflections || [],
     }
-  } catch (err) {
-    console.error("학습 통계 조회 중 오류 발생:", err)
+  } catch (error) {
+    console.error("데이터 내보내기 오류:", error)
     return {
-      totalTime: 0,
-      subjectTime: {},
-      dailyTime: {},
-      weeklyTime: {},
-      monthlyTime: {},
-      hourlyDistribution: {},
-      dayOfWeekDistribution: {},
+      user: null,
+      studyLogs: [],
+      assignments: [],
+      grades: [],
+      reports: [],
+      reflections: [],
     }
-  }
-}
-
-// 주차 계산 함수
-function getWeekNumber(date: Date): number {
-  const firstDayOfYear = new Date(date.getFullYear(), 0, 1)
-  const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000
-  return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7)
-}
-
-// 학부모 계정 관련 함수 추가
-
-// 학생의 학부모 계정 조회
-export async function getParentsByStudent(studentId: string): Promise<User[]> {
-  try {
-    const { data: parents, error } = await supabaseAdmin
-      .from("users")
-      .select("*")
-      .eq("role", "parent")
-      .eq("child_id", studentId)
-
-    if (error) {
-      console.error("학부모 계정 조회 오류:", error)
-      return []
-    }
-
-    return parents as User[]
-  } catch (err) {
-    console.error("학부모 계정 조회 중 오류 발생:", err)
-    return []
-  }
-}
-
-// 학부모 계정 추가
-export async function addParentAccount(parent: Omit<User, "id" | "created_at">): Promise<User> {
-  try {
-    // 비밀번호 해싱
-    const hashedPassword = await bcrypt.hash(parent.password!, 10)
-
-    const id = `parent_${Date.now()}`
-    const newParent = {
-      id,
-      ...parent,
-      password: hashedPassword,
-      created_at: new Date().toISOString(),
-    }
-
-    // 비밀번호 필드 제외하고 반환할 객체 준비
-    const { password, ...parentWithoutPassword } = newParent
-
-    const { data, error } = await supabaseAdmin.from("users").insert([newParent]).select().single()
-
-    if (error) {
-      console.error("학부모 계정 추가 오류:", error)
-      throw new Error("학부모 계정을 추가하는 중 오류가 발생했습니다.")
-    }
-
-    // 비밀번호 필드 제외하고 반환
-    const { password: _, ...result } = data
-    return result as User
-  } catch (err) {
-    console.error("학부모 계정 추가 중 오류 발생:", err)
-    throw err
-  }
-}
-
-// 알림 관련 함수 추가
-
-// 알림 조회
-export async function getNotificationsByUser(userId: string): Promise<Notification[]> {
-  try {
-    const { data: notifications, error } = await supabaseAdmin
-      .from("notifications")
-      .select("*")
-      .eq("user_id", userId)
-      .order("timestamp", { ascending: false })
-      .limit(50)
-
-    if (error) {
-      console.error("알림 조회 오류:", error)
-      return []
-    }
-
-    return notifications as Notification[]
-  } catch (err) {
-    console.error("알림 조회 중 오류 발생:", err)
-    return []
-  }
-}
-
-// 알림 추가
-export async function addNotification(notification: Omit<Notification, "id" | "timestamp">): Promise<Notification> {
-  try {
-    const id = `notification_${Date.now()}`
-    const newNotification = {
-      id,
-      ...notification,
-      timestamp: new Date().toISOString(),
-    }
-
-    const { data, error } = await supabaseAdmin.from("notifications").insert([newNotification]).select().single()
-
-    if (error) {
-      console.error("알림 추가 오류:", error)
-      throw new Error("알림을 추가하는 중 오류가 발생했습니다.")
-    }
-
-    return data as Notification
-  } catch (err) {
-    console.error("알림 추가 중 오류 발생:", err)
-    throw err
-  }
-}
-
-// 알림 읽음 표시
-export async function markNotificationAsRead(id: string): Promise<void> {
-  try {
-    const { error } = await supabaseAdmin.from("notifications").update({ read: true }).eq("id", id)
-
-    if (error) {
-      console.error("알림 읽음 표시 오류:", error)
-      throw new Error("알림을 읽음 표시하는 중 오류가 발생했습니다.")
-    }
-  } catch (err) {
-    console.error("알림 읽음 표시 중 오류 발생:", err)
-    throw err
-  }
-}
-
-// 모든 알림 읽음 표시
-export async function markAllNotificationsAsRead(userId: string): Promise<void> {
-  try {
-    const { error } = await supabaseAdmin.from("notifications").update({ read: true }).eq("user_id", userId)
-
-    if (error) {
-      console.error("모든 알림 읽음 표시 오류:", error)
-      throw new Error("모든 알림을 읽음 표시하는 중 오류가 발생했습니다.")
-    }
-  } catch (err) {
-    console.error("모든 알림 읽음 표시 중 오류 발생:", err)
-    throw err
-  }
-}
-
-// 일일 학습 성찰 관련 함수 추가
-
-// 일일 학습 성찰 추가
-export async function addDailyReflection(
-  reflection: Omit<DailyReflection, "id" | "created_at" | "updated_at">,
-): Promise<DailyReflection> {
-  try {
-    const id = `reflection_${Date.now()}`
-    const now = new Date().toISOString()
-
-    const newReflection = {
-      id,
-      ...reflection,
-      created_at: now,
-      updated_at: now,
-    }
-
-    const { data, error } = await supabaseAdmin
-      .from("daily_reflections")
-      .upsert([newReflection], { onConflict: "student_id, reflection_date" })
-      .select()
-      .single()
-
-    if (error) {
-      console.error("일일 학습 성찰 추가 오류:", error)
-      throw new Error("일일 학습 성찰을 추가하는 중 오류가 발생했습니다.")
-    }
-    console.error("일일 학습 성찰 추가 오류:", error)
-    throw new Error("일일 학습 성찰을 추가하는 중 오류가 발생했습니다.")
-
-    return data as DailyReflection
-  } catch (err) {
-    console.error("일일 학습 성찰 추가 중 오류 발생:", err)
-    throw err
-  }
-}
-
-// 학생별 일일 학습 성찰 조회
-export async function getReflectionsByStudent(
-  studentId: string,
-  startDate?: string,
-  endDate?: string,
-): Promise<DailyReflection[]> {
-  try {
-    let query = supabaseAdmin
-      .from("daily_reflections")
-      .select("*")
-      .eq("student_id", studentId)
-      .order("reflection_date", { ascending: false })
-
-    if (startDate) {
-      query = query.gte("reflection_date", startDate)
-    }
-
-    if (endDate) {
-      query = query.lte("reflection_date", endDate)
-    }
-
-    const { data, error } = await query
-
-    if (error) {
-      console.error("학습 성찰 조회 오류:", error)
-      return []
-    }
-
-    return data as DailyReflection[]
-  } catch (err) {
-    console.error("학습 성찰 조회 중 오류 발생:", err)
-    return []
-  }
-}
-
-// 특정 날짜의 학습 성찰 조회
-export async function getReflectionByDate(studentId: string, date: string): Promise<DailyReflection | null> {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("daily_reflections")
-      .select("*")
-      .eq("student_id", studentId)
-      .eq("reflection_date", date)
-      .single()
-
-    if (error) {
-      return null
-    }
-
-    return data as DailyReflection
-  } catch (err) {
-    console.error("특정 날짜 학습 성찰 조회 중 오류 발생:", err)
-    return null
-  }
-}
-
-// 모든 성찰 조회 (관리자용)
-export async function getAllReflections(): Promise<DailyReflection[]> {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("daily_reflections")
-      .select("*")
-      .order("created_at", { ascending: false })
-
-    if (error) {
-      console.error("모든 성찰 조회 오류:", error)
-      return []
-    }
-
-    return data as DailyReflection[]
-  } catch (err) {
-    console.error("모든 성찰 조회 중 오류 발생:", err)
-    return []
-  }
-}
-
-// 최근 성찰 조회
-export async function getRecentReflections(limit = 5): Promise<DailyReflection[]> {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("daily_reflections")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(limit)
-
-    if (error) {
-      console.error("최근 성찰 조회 오류:", error)
-      return []
-    }
-
-    return data as DailyReflection[]
-  } catch (err) {
-    console.error("최근 성찰 조회 중 오류 발생:", err)
-    return []
-  }
-}
-
-// 학생별 과제 조회 (타입 명확화)
-export async function getStudentAssignments(studentId: string): Promise<Assignment[]> {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("assignments")
-      .select("*")
-      .eq("student_id", studentId)
-      .order("created_at", { ascending: false })
-
-    if (error) {
-      console.error("학생별 과제 조회 오류:", error)
-      return []
-    }
-
-    return data as Assignment[]
-  } catch (err) {
-    console.error("학생별 과제 조회 중 오류 발생:", err)
-    return []
-  }
-}
-
-// 학생별 성적 조회 (타입 명확화)
-export async function getStudentGrades(studentId: string): Promise<Grade[]> {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("grades")
-      .select("*")
-      .eq("student_id", studentId)
-      .order("timestamp", { ascending: false })
-
-    if (error) {
-      console.error("학생별 성적 조회 오류:", error)
-      return []
-    }
-
-    return data as Grade[]
-  } catch (err) {
-    console.error("학생별 성적 조회 중 오류 발생:", err)
-    return []
-  }
-}
-
-// 학생별 학습 로그 조회 (타입 명확화)
-export async function getStudentStudyLogs(studentId: string): Promise<StudyLog[]> {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("study_logs")
-      .select("*")
-      .eq("student_id", studentId)
-      .order("timestamp", { ascending: false })
-
-    if (error) {
-      console.error("학생별 학습 로그 조회 오류:", error)
-      return []
-    }
-
-    return data as StudyLog[]
-  } catch (err) {
-    console.error("학생별 학습 로그 조회 중 오류 발생:", err)
-    return []
-  }
-}
-
-// 학생별 성찰 조회 (타입 명확화)
-export async function getStudentReflections(studentId: string): Promise<DailyReflection[]> {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("daily_reflections")
-      .select("*")
-      .eq("student_id", studentId)
-      .order("reflection_date", { ascending: false })
-
-    if (error) {
-      console.error("학생별 성찰 조회 오류:", error)
-      return []
-    }
-
-    return data as DailyReflection[]
-  } catch (err) {
-    console.error("학생별 성찰 조회 중 오류 발생:", err)
-    return []
   }
 }

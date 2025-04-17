@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { CheckCircle2, AlertCircle } from "lucide-react"
-import { createAdminAccount } from "@/lib/account"
 
 export default function CreateAdminScript() {
   const [isLoading, setIsLoading] = useState(false)
@@ -34,8 +33,22 @@ export default function CreateAdminScript() {
     setError(null)
 
     try {
-      const result = await createAdminAccount(formData)
-      setSuccess(`관리자 계정이 성공적으로 생성되었습니다. 아이디: ${result.id}`)
+      // 서버 API 엔드포인트를 사용하여 관리자 계정 생성
+      const response = await fetch("/api/create-admin", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(formData),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "관리자 계정 생성 중 오류가 발생했습니다.")
+      }
+
+      setSuccess(`관리자 계정이 성공적으로 생성되었습니다. 아이디: ${formData.id}`)
     } catch (err: any) {
       setError(err.message || "관리자 계정 생성 중 오류가 발생했습니다.")
     } finally {

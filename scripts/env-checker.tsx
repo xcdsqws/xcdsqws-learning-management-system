@@ -2,34 +2,51 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { CheckCircle2, XCircle } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { CheckCircle2, AlertCircle } from "lucide-react"
 
 export default function EnvChecker() {
-  const [envStatus, setEnvStatus] = useState<Record<string, boolean>>({})
-  const [isLoading, setIsLoading] = useState(true)
+  const [status, setStatus] = useState<{
+    supabaseUrl: boolean
+    supabaseAnonKey: boolean
+    supabaseServiceKey: boolean
+    loading: boolean
+    error: string | null
+  }>({
+    supabaseUrl: false,
+    supabaseAnonKey: false,
+    supabaseServiceKey: false,
+    loading: true,
+    error: null,
+  })
 
   useEffect(() => {
-    const checkEnvVariables = async () => {
+    const checkEnv = async () => {
       try {
-        // 클라이언트 측에서는 NEXT_PUBLIC_ 접두사가 있는 환경 변수만 접근 가능
-        const status = {
-          NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        const response = await fetch("/api/check-env")
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || "환경 변수 확인 중 오류가 발생했습니다.")
         }
 
-        // 서버 측 환경 변수는 API를 통해 확인 (실제 값은 반환하지 않음)
-        const response = await fetch("/api/check-env")
-        const serverEnvStatus = await response.json()
-
-        setEnvStatus({ ...status, ...serverEnvStatus })
-      } catch (error) {
-        console.error("환경 변수 확인 오류:", error)
-      } finally {
-        setIsLoading(false)
+        setStatus({
+          supabaseUrl: data.supabaseUrl,
+          supabaseAnonKey: data.supabaseAnonKey,
+          supabaseServiceKey: data.supabaseServiceKey,
+          loading: false,
+          error: null,
+        })
+      } catch (error: any) {
+        setStatus((prev) => ({
+          ...prev,
+          loading: false,
+          error: error.message,
+        }))
       }
     }
 
-    checkEnvVariables()
+    checkEnv()
   }, [])
 
   return (
@@ -39,34 +56,55 @@ export default function EnvChecker() {
           <CardTitle>환경 변수 확인</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <p>환경 변수를 확인하는 중...</p>
+          {status.loading ? (
+            <div className="text-center">환경 변수를 확인하는 중입니다...</div>
+          ) : status.error ? (
+            <Alert className="mb-4 bg-red-50 border-red-200">
+              <AlertCircle className="h-4 w-4 text-red-600" />
+              <AlertDescription className="text-red-600">{status.error}</AlertDescription>
+            </Alert>
           ) : (
-            <div className="space-y-2">
-              {Object.entries(envStatus).map(([key, exists]) => (
-                <div key={key} className="flex items-center justify-between p-2 border rounded-md">
-                  <span className="font-mono text-sm">{key}</span>
-                  {exists ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-500" />
-                  ) : (
-                    <XCircle className="h-5 w-5 text-red-500" />
-                  )}
-                </div>
-              ))}
-
-              <div className="mt-4 p-4 bg-blue-50 rounded-md text-sm">
-                <p className="font-medium text-blue-700 mb-2">환경 변수 설정 방법:</p>
-                <ol className="list-decimal pl-5 space-y-1 text-blue-700">
-                  <li>
-                    프로젝트 루트에 <code>.env.local</code> 파일을 생성합니다.
-                  </li>
-                  <li>다음 환경 변수를 설정합니다:</li>
-                  <li className="font-mono">NEXT_PUBLIC_SUPABASE_URL=your_supabase_url</li>
-                  <li className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key</li>
-                  <li className="font-mono">SUPABASE_SERVICE_ROLE_KEY=your_service_key</li>
-                  <li>애플리케이션을 재시작합니다.</li>
-                </ol>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span>SUPABASE_URL</span>
+                {status.supabaseUrl ? (
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-red-600" />
+                )}
               </div>
+              <div className="flex items-center justify-between">
+                <span>NEXT_PUBLIC_SUPABASE_ANON_KEY</span>
+                {status.supabaseAnonKey ? (
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-red-600" />
+                )}
+              </div>
+              <div className="flex items-center justify-between">
+                <span>SUPABASE_SERVICE_ROLE_KEY</span>
+                {status.supabaseServiceKey ? (
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-red-600" />
+                )}
+              </div>
+
+              {status.supabaseUrl && status.supabaseAnonKey && status.supabaseServiceKey ? (
+                <Alert className="mt-4 bg-green-50 border-green-200">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-green-600">
+                    모든 환경 변수가 올바르게 설정되었습니다.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <Alert className="mt-4 bg-red-50 border-red-200">
+                  <AlertCircle className="h-4 w-4 text-red-600" />
+                  <AlertDescription className="text-red-600">
+                    일부 환경 변수가 설정되지 않았습니다. Vercel 대시보드에서 환경 변수를 확인해주세요.
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
           )}
         </CardContent>
