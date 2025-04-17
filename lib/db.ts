@@ -867,9 +867,7 @@ export async function getStudentAssignments(studentId: string): Promise<Assignme
       .from("assignments")
       .select("*, subject:subjects(name)")
       .eq("student_id", studentId)
-      .order("due_date",
-    ascending: false
-    )
+      .order("due_date", { ascending: false })
 
     if (error) {
       throw error
