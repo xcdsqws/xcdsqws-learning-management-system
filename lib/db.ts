@@ -817,8 +817,7 @@ export async function deleteDailyReflection(id: number): Promise<boolean> {
 
     return true
   } catch (error) {
-    console.error("일일 성찰 삭제 오류:", error), error
-    )
+    console.error("일일 성찰 삭제 오류:", error)
     return false
   }
 }
