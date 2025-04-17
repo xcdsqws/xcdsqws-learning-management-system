@@ -1,7 +1,7 @@
 "use server"
 
 import { supabaseAdmin } from "./supabase"
-import bcrypt from "bcrypt"
+import bcrypt from "bcryptjs"
 
 // 학생 계정 생성
 export async function createAccount(data: {
