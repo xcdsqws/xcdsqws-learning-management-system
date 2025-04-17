@@ -18,7 +18,7 @@ interface StudentDetailProps {
   studentId: string
 }
 
-export function StudentDetail({ studentId }: StudentDetailProps) {
+export default function StudentDetail({ studentId }: StudentDetailProps) {
   const [student, setStudent] = useState<Student | null>(null)
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [grades, setGrades] = useState<Grade[]>([])

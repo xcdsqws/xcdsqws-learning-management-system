@@ -12,7 +12,7 @@ import { getAllReflections, getStudentById } from "@/lib/db"
 import type { DailyReflection, Student } from "@/lib/types"
 import { formatDate } from "@/lib/utils"
 
-export function ReflectionList() {
+export default function ReflectionList() {
   const [reflections, setReflections] = useState<(DailyReflection & { student: Student })[]>([])
   const [filteredReflections, setFilteredReflections] = useState<(DailyReflection & { student: Student })[]>([])
   const [searchTerm, setSearchTerm] = useState("")
@@ -28,7 +28,7 @@ export function ReflectionList() {
         const reflectionsWithStudents = await Promise.all(
           allReflections.map(async (reflection) => {
             const student = await getStudentById(reflection.student_id)
-            return { ...reflection, student }
+            return { ...reflection, student: student || ({ name: "Unknown" } as Student) }
           }),
         )
 
@@ -51,7 +51,7 @@ export function ReflectionList() {
     if (searchTerm) {
       filtered = filtered.filter(
         (reflection) =>
-          reflection.student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          reflection.student?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           reflection.content.toLowerCase().includes(searchTerm.toLowerCase()),
       )
     }
@@ -131,7 +131,7 @@ export function ReflectionList() {
                 {filteredReflections.map((reflection) => (
                   <TableRow key={reflection.id}>
                     <TableCell>{formatDate(reflection.created_at)}</TableCell>
-                    <TableCell>{reflection.student.name}</TableCell>
+                    <TableCell>{reflection.student?.name || "Unknown"}</TableCell>
                     <TableCell>
                       <Badge className={getRatingColor(reflection.self_rating)}>{reflection.self_rating}점</Badge>
                     </TableCell>
@@ -149,7 +149,7 @@ export function ReflectionList() {
                         <DialogContent className="max-w-2xl">
                           <DialogHeader>
                             <DialogTitle>
-                              {reflection.student.name}의 성찰 - {formatDate(reflection.created_at)}
+                              {reflection.student?.name || "Unknown"}의 성찰 - {formatDate(reflection.created_at)}
                             </DialogTitle>
                           </DialogHeader>
                           <div className="mt-4">

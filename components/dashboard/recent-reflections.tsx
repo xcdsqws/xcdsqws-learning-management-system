@@ -10,7 +10,7 @@ import { getRecentReflections } from "@/lib/db"
 import type { DailyReflection } from "@/lib/types"
 import { formatDate } from "@/lib/utils"
 
-export function RecentReflections() {
+export default function RecentReflections() {
   const [reflections, setReflections] = useState<DailyReflection[]>([])
   const [isLoading, setIsLoading] = useState(true)
 

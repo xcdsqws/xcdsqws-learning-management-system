@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { BarChart3, BookOpen, ClipboardList, GraduationCap, Home, Settings, Users, BookMarked } from "lucide-react"
 
-export function AdminHeader() {
+export default function AdminHeader({ user }: { user: any }) {
   const pathname = usePathname()
 
   const isActive = (path: string) => {

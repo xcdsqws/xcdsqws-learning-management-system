@@ -4,6 +4,26 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { supabaseAdmin } from "./supabase"
 import bcryptjs from "bcryptjs" // bcrypt에서 bcryptjs로 변경
+import type { User } from "./types"
+
+// 현재 사용자 정보 가져오기
+export async function getCurrentUser(): Promise<User | null> {
+  const session = await getSession()
+  if (!session) return null
+
+  try {
+    const { data: user, error } = await supabaseAdmin.from("users").select("*").eq("id", session.id).single()
+
+    if (error || !user) {
+      return null
+    }
+
+    return user
+  } catch (error) {
+    console.error("사용자 정보 조회 오류:", error)
+    return null
+  }
+}
 
 // 로그인 처리
 export async function login(formData: FormData) {
@@ -82,7 +102,7 @@ export async function getSession() {
 }
 
 // 인증 필요한 페이지에서 세션 확인
-export async function requireAuth() {
+export async function checkAuth() {
   const session = await getSession()
 
   if (!session) {
@@ -93,7 +113,7 @@ export async function requireAuth() {
 }
 
 // 관리자 권한 확인
-export async function requireAdmin() {
+export async function checkAdmin() {
   const session = await getSession()
 
   if (!session || session.role !== "admin") {
@@ -104,7 +124,7 @@ export async function requireAdmin() {
 }
 
 // 학부모 권한 확인
-export async function requireParent() {
+export async function checkParent() {
   const session = await getSession()
 
   if (!session || session.role !== "parent") {
@@ -115,7 +135,7 @@ export async function requireParent() {
 }
 
 // 학생 권한 확인
-export async function requireStudent() {
+export async function checkStudent() {
   const session = await getSession()
 
   if (!session || session.role !== "student") {
