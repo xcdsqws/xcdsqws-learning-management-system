@@ -14,7 +14,7 @@ import type {
   DailyReflection,
   Student,
 } from "./types"
-import bcrypt from "bcrypt"
+import bcrypt from "bcryptjs"
 
 // 사용자 인증
 export async function getUser(id: string, password: string): Promise<User | null> {
