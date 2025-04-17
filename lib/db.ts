@@ -1132,3 +1132,31 @@ export async function addParentAccount(parent: {
     return null
   }
 }
+// 함수 별칭 추가 (기존 함수를 새 이름으로 내보내기)
+export const getAssignmentsByStudent = getAssignments;
+export const getStudyLogsByStudent = getStudyLogs;
+export const getGradesByStudent = getGrades;
+export const getReflectionsByStudent = getDailyReflections;
+export const getReportByStudent = getReports;
+export const getNotificationsByUser = getNotifications;
+export const getStudyGoalsByStudent = getStudyGoals;
+
+// 새 함수 추가 (없는 경우)
+export const getParentsByStudent = async (studentId: string) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("users")
+      .select("*")
+      .eq("role", "parent")
+      .eq("child_id", studentId);
+
+    if (error) {
+      throw error;
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("학부모 조회 오류:", error);
+    return [];
+  }
+};
